@@ -228,6 +228,15 @@ class EnumCombo(ComboBox):
         if v in self._values:
             self.setCurrentIndex(self._values.index(v))
 
+    def fit_to_items(self) -> EnumCombo:
+        """Fixed width that fits the longest entry, for choices whose texts never change."""
+        self.ensurePolished()
+        fm = self.fontMetrics()
+        padding = self.sizeHint().width() - fm.horizontalAdvance(self.text())  # margins and arrow
+        widest = max((fm.horizontalAdvance(self.itemText(i)) for i in range(self.count())), default=0)
+        self.setFixedWidth(widest + padding)
+        return self
+
 
 class LanguageCombo(EditableComboBox):
     """Language picker.

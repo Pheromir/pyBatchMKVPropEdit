@@ -70,6 +70,7 @@ FIELD_HEIGHT = 30
 GUTTER = 24  # room for the x to the right of a field
 SPACING = 6
 TWO_COLUMNS_FROM = 680  # narrower than this, the actions go below the match
+QWIDGETSIZE_MAX = (1 << 24) - 1  # Qt's "no maximum width"; PySide6 does not export the constant
 
 
 def placeholder_button(target: LineEdit, include_track: bool, parent=None) -> ToolButton:
@@ -218,16 +219,17 @@ class TrackRuleEditor(QWidget):
         tl = QHBoxLayout(type_row)
         tl.setContentsMargins(0, 0, 0, 0)
         tl.setSpacing(SPACING)
-        self.type_combo = self._compact(EnumCombo([(t, t.label) for t in TrackType], type_row))
+        self.type_combo = self._compact(EnumCombo([(t, t.label) for t in TrackType], type_row).fit_to_items())
         self.match_mode = self._compact(
-            EnumCombo([(MatchMode.FIRST, "first match"), (MatchMode.ALL, "all matches")], type_row)
+            EnumCombo([(MatchMode.FIRST, "first match"), (MatchMode.ALL, "all matches")], type_row).fit_to_items()
         )
         self.match_mode.setToolTip(MATCH_MODE_TIP)
         self.match_mode.installEventFilter(ToolTipFilter(self.match_mode))
         type_row.installEventFilter(ToolTipFilter(type_row))  # shows the tip while the choice is greyed out
         self.type_row = type_row
-        tl.addWidget(self.type_combo, 1)
-        tl.addWidget(self.match_mode, 1)
+        tl.addWidget(self.type_combo)
+        tl.addWidget(self.match_mode)
+        tl.addStretch(1)
         self._row(match, "Type", type_row)
 
         self.positions = self._compact(LineEdit(self.card))
@@ -251,9 +253,9 @@ class TrackRuleEditor(QWidget):
         self.regex_hint.setTextColor("#c42b1c", "#ff99a4")
         self.regex_hint_row = self._row(match, "", self.regex_hint)
         self.regex_hint_row.hide()
-        self.is_default = self._compact(EnumCombo([(True, "yes"), (False, "no")], self.card))
+        self.is_default = self._compact(EnumCombo([(True, "yes"), (False, "no")], self.card).fit_to_items())
         self._optional_row(match, "is_default", self.is_default)
-        self.is_forced = self._compact(EnumCombo([(True, "yes"), (False, "no")], self.card))
+        self.is_forced = self._compact(EnumCombo([(True, "yes"), (False, "no")], self.card).fit_to_items())
         self._optional_row(match, "is_forced", self.is_forced)
         self.match_info = self._note(match)
         match.addStretch(1)
@@ -282,7 +284,9 @@ class TrackRuleEditor(QWidget):
         nl = QHBoxLayout(name_row)
         nl.setContentsMargins(0, 0, 0, 0)
         nl.setSpacing(SPACING)
-        self.name_mode = self._compact(EnumCombo([(NameMode.SET, "set to"), (NameMode.CLEAR, "remove")], name_row))
+        self.name_mode = self._compact(
+            EnumCombo([(NameMode.SET, "set to"), (NameMode.CLEAR, "remove")], name_row).fit_to_items()
+        )
         self.name_template = self._compact(LineEdit(name_row))
         self.name_template.setPlaceholderText("e.g. {lang_name} · Signs & Songs · CR")
         nl.addWidget(self.name_mode)
@@ -365,7 +369,9 @@ class TrackRuleEditor(QWidget):
         lbl.setFixedWidth(LABEL_WIDTH)
         lay.addWidget(lbl, 0, Qt.AlignTop)
         lbl.setFixedHeight(FIELD_HEIGHT)
-        lay.addWidget(editor, 1)
+        # a field with a fixed width stays at the left; the x keeps its place in the gutter
+        fixed = editor.maximumWidth() < QWIDGETSIZE_MAX
+        lay.addWidget(editor, 1, Qt.AlignLeft if fixed else Qt.Alignment())
         if key:
             btn = remove_button("Remove", row)
             btn.clicked.connect(lambda: self._remove(key))
