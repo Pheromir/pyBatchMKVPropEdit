@@ -1,0 +1,132 @@
+# Builds the Windows exe and the Linux AppImage and attaches both to a GitHub release.
+#
+# Runs when a release is published. The release tag must match bmpe.__version__,
+# e.g. tag "v0.2.0" for __version__ = "0.2.0".
+# "Run workflow" (workflow_dispatch) builds the same files as downloadable run artifacts, without a release.
+# Uses only the automatic GITHUB_TOKEN of the run; no secrets are needed.
+name: Release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write  # upload files to the release
+
+env:
+  PYTHON_VERSION: "3.14"
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: python -m pip install -e ".[dev]"
+
+      - name: Read version
+        id: version
+        shell: bash
+        run: |
+          version=$(python -c "import sys; sys.path.insert(0, 'src'); import bmpe; print(bmpe.__version__)")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [ "${{ github.event_name }}" = "release" ] && [ "${GITHUB_REF_NAME#v}" != "$version" ]; then
+            echo "::error::Release tag $GITHUB_REF_NAME does not match version $version in src/bmpe/__init__.py"
+            exit 1
+          fi
+
+      - name: Test
+        run: python -m pytest -q
+
+      - name: Build exe
+        run: python -m PyInstaller build.spec --noconfirm
+
+      - name: Rename
+        id: asset
+        shell: bash
+        run: |
+          asset="pyBatchMKVPropEdit-${{ steps.version.outputs.version }}-windows-x64.exe"
+          mv dist/pyBatchMKVPropEdit.exe "dist/$asset"
+          echo "path=dist/$asset" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: ${{ steps.asset.outputs.path }}
+
+      - name: Attach to release
+        if: github.event_name == 'release'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$GITHUB_REF_NAME" "${{ steps.asset.outputs.path }}" --clobber
+
+  linux:
+    # the AppImage runs on this glibc and newer ones, so build on an older Ubuntu
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install system libraries for Qt
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libxkbcommon-x11-0 libxcb-cursor0 \
+            libfontconfig1 libdbus-1-3 libglib2.0-0
+
+      - name: Install dependencies
+        run: python -m pip install -e ".[dev]"
+
+      - name: Read version
+        id: version
+        run: |
+          version=$(python -c "import sys; sys.path.insert(0, 'src'); import bmpe; print(bmpe.__version__)")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [ "${{ github.event_name }}" = "release" ] && [ "${GITHUB_REF_NAME#v}" != "$version" ]; then
+            echo "::error::Release tag $GITHUB_REF_NAME does not match version $version in src/bmpe/__init__.py"
+            exit 1
+          fi
+
+      - name: Test
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m pytest -q
+
+      - name: Get appimagetool
+        run: |
+          curl -fsSL -o appimagetool \
+            https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool
+
+      - name: Build AppImage
+        env:
+          PYTHON: python
+          APPIMAGETOOL: ./appimagetool
+        run: bash tools/build_appimage.sh
+
+      - name: Rename
+        id: asset
+        run: |
+          asset="pyBatchMKVPropEdit-${{ steps.version.outputs.version }}-linux-x86_64.AppImage"
+          mv "dist/pyBatchMKVPropEdit-${{ steps.version.outputs.version }}-x86_64.AppImage" "dist/$asset"
+          echo "path=dist/$asset" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: ${{ steps.asset.outputs.path }}
+
+      - name: Attach to release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$GITHUB_REF_NAME" "${{ steps.asset.outputs.path }}" --clobber

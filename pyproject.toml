@@ -18,7 +18,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8", "pyinstaller>=6.10"]
 
-[project.scripts]
+[project.gui-scripts]  # no console window next to the program on Windows
 pybatchmkvpropedit = "bmpe.app:main"
 
 [tool.setuptools.packages.find]
