@@ -1,0 +1,5 @@
+# Linux files keep LF on Windows checkouts too (bash refuses CRLF scripts)
+*.sh      text eol=lf
+*.desktop text eol=lf
+# written by tools/collect_licenses.py with LF on every build
+src/bmpe/resources/licenses/** text eol=lf

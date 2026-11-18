@@ -1,0 +1,148 @@
+[
+  {
+    "name": "pyBatchMKVPropEdit",
+    "version": "0.2.0",
+    "license": "MIT",
+    "url": "",
+    "files": [
+      "pyBatchMKVPropEdit.txt"
+    ],
+    "note": "The source code of pyBatchMKVPropEdit is released under the MIT License.\n\nThis build also contains the libraries listed here. PySide6-Fluent-Widgets is licensed under the GPL 3.0, so the build as a whole is distributed under the terms of the GPL 3.0.\n\nMKVToolNix is not included; it is installed separately."
+  },
+  {
+    "name": "Python",
+    "version": "3.14.6",
+    "license": "PSF-2.0",
+    "url": "https://www.python.org",
+    "files": [
+      "Python.txt"
+    ]
+  },
+  {
+    "name": "Qt / PySide6 / Shiboken6",
+    "dist": "PySide6_Essentials",
+    "version": "6.12.0",
+    "license": "LGPL-3.0",
+    "url": "https://www.qt.io/qt-for-python",
+    "files": [
+      "LGPL-3.0.txt",
+      "GPL-3.0.txt"
+    ],
+    "note": "Copyright (C) The Qt Company Ltd. and other contributors.\n\nQt and PySide6 are used unmodified under the GNU LGPL 3.0. The source code is available at https://code.qt.io."
+  },
+  {
+    "name": "PySide6-Fluent-Widgets",
+    "dist": "PySide6-Fluent-Widgets",
+    "version": "1.11.3",
+    "license": "GPL-3.0",
+    "url": "https://github.com/zhiyiYo/PyQt-Fluent-Widgets",
+    "files": [
+      "GPL-3.0.txt"
+    ],
+    "note": "Copyright (C) zhiyiYo\n\nUsed unmodified under the GNU GPL 3.0."
+  },
+  {
+    "name": "PySideSix-Frameless-Window",
+    "dist": "PySideSix-Frameless-Window",
+    "version": "0.8.2",
+    "license": "LGPL-3.0",
+    "url": "https://github.com/zhiyiYo/PyQt-Frameless-Window",
+    "files": [
+      "LGPL-3.0.txt",
+      "GPL-3.0.txt"
+    ],
+    "note": "Copyright (C) zhiyiYo\n\nUsed unmodified under the GNU LGPL 3.0."
+  },
+  {
+    "name": "darkdetect",
+    "dist": "darkdetect",
+    "version": "0.8.0",
+    "license": "BSD-3-Clause",
+    "url": "https://github.com/albertosottile/darkdetect",
+    "files": [
+      "darkdetect.txt"
+    ]
+  },
+  {
+    "name": "pydantic",
+    "dist": "pydantic",
+    "version": "2.14.3",
+    "license": "MIT",
+    "url": "https://github.com/pydantic/pydantic",
+    "files": [
+      "pydantic.txt"
+    ]
+  },
+  {
+    "name": "pydantic-core",
+    "dist": "pydantic_core",
+    "version": "2.50.4",
+    "license": "MIT",
+    "url": "https://github.com/pydantic/pydantic-core",
+    "files": [
+      "pydantic-core.txt"
+    ]
+  },
+  {
+    "name": "annotated-types",
+    "dist": "annotated-types",
+    "version": "0.8.0",
+    "license": "MIT",
+    "url": "https://github.com/annotated-types/annotated-types",
+    "files": [
+      "annotated-types.txt"
+    ]
+  },
+  {
+    "name": "typing-inspection",
+    "dist": "typing-inspection",
+    "version": "0.4.5",
+    "license": "MIT",
+    "url": "https://github.com/pydantic/typing-inspection",
+    "files": [
+      "typing-inspection.txt"
+    ]
+  },
+  {
+    "name": "typing_extensions",
+    "dist": "typing_extensions",
+    "version": "4.16.0",
+    "license": "PSF-2.0",
+    "url": "https://github.com/python/typing_extensions",
+    "files": [
+      "typing-extensions.txt"
+    ]
+  },
+  {
+    "name": "packaging",
+    "dist": "packaging",
+    "version": "26.3",
+    "license": "Apache-2.0 OR BSD-2-Clause",
+    "url": "https://github.com/pypa/packaging",
+    "files": [
+      "packaging.txt",
+      "packaging-Apache-2.0.txt",
+      "packaging-BSD.txt"
+    ]
+  },
+  {
+    "name": "pywin32",
+    "dist": "pywin32",
+    "version": "312",
+    "license": "PSF-2.0",
+    "url": "https://github.com/mhammond/pywin32",
+    "files": [
+      "pywin32.txt"
+    ]
+  },
+  {
+    "name": "DejaVu Sans",
+    "version": "2.35",
+    "license": "Bitstream Vera",
+    "url": "https://dejavu-fonts.github.io",
+    "files": [
+      "DejaVu.txt"
+    ],
+    "note": "Only used to draw the program icon; the font itself is not included."
+  }
+]

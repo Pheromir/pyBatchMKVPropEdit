@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=pyBatchMKVPropEdit
+Comment=Batch editing of MKV properties with mkvpropedit
+Exec=pybatchmkvpropedit %F
+Icon=pybatchmkvpropedit
+Terminal=false
+Categories=AudioVideo;Video;
+MimeType=video/x-matroska;audio/x-matroska;video/webm;
