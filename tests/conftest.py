@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 from bmpe.core.models import FileInfo, TrackInfo, TrackType
@@ -22,7 +24,7 @@ def _t(id, type, idx, lang="und", name="", codec="", default=False, forced=False
 @pytest.fixture
 def anime_file() -> FileInfo:
     return FileInfo(
-        path=r"C:\Series\Show\Show - 01.mkv",
+        path=str(Path("/Series/Show/Show - 01.mkv")),  # native separators, so it also works on Linux
         title="Old title",
         tracks=[
             _t(0, TrackType.VIDEO, 1, codec="AVC/H.264/MPEG-4p10", default=True),

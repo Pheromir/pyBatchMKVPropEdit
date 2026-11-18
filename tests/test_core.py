@@ -120,7 +120,7 @@ def test_render_args_keeps_quotes_and_spaces_of_values():
 
 
 def test_extra_args_with_quote_in_file_name(anime_file):
-    anime_file.path = r"C:\Series\Don't Look Up.mkv"
+    anime_file.path = str(Path("/Series/Don't Look Up.mkv"))
     preset = GlobalPreset()
     preset.general.extra_args = "--edit info --set title={file_name}"
     assert plan_file(anime_file, preset, 0).args == ["--edit", "info", "--set", "title=Don't Look Up"]
