@@ -69,7 +69,8 @@ LABEL_WIDTH = 72
 FIELD_HEIGHT = 30
 GUTTER = 24  # room for the x to the right of a field
 SPACING = 6
-TWO_COLUMNS_FROM = 680  # narrower than this, the actions go below the match
+MATCH_COLUMN_WIDTH = 340  # fixed while the columns are side by side
+TWO_COLUMNS_FROM = 760  # narrower than this, the actions go below the match
 QWIDGETSIZE_MAX = (1 << 24) - 1  # Qt's "no maximum width"; PySide6 does not export the constant
 
 
@@ -202,11 +203,15 @@ class TrackRuleEditor(QWidget):
 
         self.columns = QBoxLayout(QBoxLayout.LeftToRight)
         self.columns.setSpacing(22)
-        match = QVBoxLayout()
+        # side by side, the match column keeps its width and the actions get all the extra room
+        self.match_column = QWidget(self.card)
+        match = QVBoxLayout(self.match_column)
+        match.setContentsMargins(0, 0, 0, 0)
         match.setSpacing(SPACING)
         actions = QVBoxLayout()
         actions.setSpacing(SPACING)
-        self.columns.addLayout(match, 1)
+        self.match_column.setFixedWidth(MATCH_COLUMN_WIDTH)
+        self.columns.addWidget(self.match_column, 0)
         self.columns.addLayout(actions, 1)
         box.addLayout(self.columns)
 
@@ -334,6 +339,11 @@ class TrackRuleEditor(QWidget):
         wanted = QBoxLayout.LeftToRight if self.width() >= TWO_COLUMNS_FROM else QBoxLayout.TopToBottom
         if self.columns.direction() != wanted:
             self.columns.setDirection(wanted)
+            if wanted == QBoxLayout.LeftToRight:
+                self.match_column.setFixedWidth(MATCH_COLUMN_WIDTH)
+            else:  # one below the other: both use the full width
+                self.match_column.setMinimumWidth(0)
+                self.match_column.setMaximumWidth(QWIDGETSIZE_MAX)
 
     # ------------------------------------------------------------------ building blocks
     @staticmethod
