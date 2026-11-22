@@ -3,3 +3,5 @@
 *.desktop text eol=lf
 # written by tools/collect_licenses.py with LF on every build
 src/bmpe/resources/licenses/** text eol=lf
+# written by tools/lock_build_requirements.py with LF
+requirements-build.txt text eol=lf
