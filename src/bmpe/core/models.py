@@ -5,9 +5,11 @@ from __future__ import annotations
 import re
 import uuid
 from enum import Enum
+from pathlib import Path
 
 from pydantic import BaseModel, Field, field_validator
 
+from . import userregex
 from .languages import language_key
 
 SCHEMA_VERSION = 1
@@ -45,6 +47,8 @@ FLAGS: dict[str, tuple[str, str, str]] = {
     "commentary": ("flag-commentary", "flag_commentary", "Commentary"),
 }
 FLAG_DEFAULTS = {"enabled": True}  # Matroska default values when the element is missing
+# flags a condition can check besides "default" and "forced", which have their own fields
+FLAG_CONDITIONS = [k for k in FLAGS if k not in ("default", "forced")]
 
 
 # --------------------------------------------------------------------------- probed data
@@ -63,10 +67,36 @@ class TrackInfo(BaseModel):
     name: str = ""
     flags: dict[str, bool] = Field(default_factory=dict)
     channels: int | None = None
-    dimensions: str = ""
+    dimensions: str = ""  # display size, falls back to the pixel size
+    pixel_dimensions: str = ""  # e.g. "1920x1080"
+    bitrate: int | None = None  # bit/s, from the statistics tag BPS
+    sample_rate: int | None = None  # Hz
+    bit_depth: int | None = None
+    frame_duration: int | None = None  # ns per frame (default duration)
 
     def flag(self, key: str) -> bool:
         return self.flags.get(key, FLAG_DEFAULTS.get(key, False))
+
+    @property
+    def size(self) -> tuple[int, int] | None:
+        m = re.fullmatch(r"(\d+)x(\d+)", self.pixel_dimensions or self.dimensions)
+        return (int(m.group(1)), int(m.group(2))) if m else None
+
+    @property
+    def height(self) -> int | None:
+        return self.size[1] if self.size else None
+
+    @property
+    def fps(self) -> float | None:
+        return round(1e9 / self.frame_duration, 3) if self.frame_duration else None
+
+    @property
+    def bitrate_kbps(self) -> int | None:
+        return round(self.bitrate / 1000) if self.bitrate else None
+
+    @property
+    def sample_rate_khz(self) -> float | None:
+        return round(self.sample_rate / 1000, 3) if self.sample_rate else None
 
     @property
     def lang_display(self) -> str:
@@ -96,6 +126,7 @@ class FileInfo(BaseModel):
     chapter_entries: int = 0
     global_tags: int = 0
     track_tags: int = 0  # including the statistics tags (BPS, DURATION, ...)
+    duration: int | None = None  # ns
     error: str = ""
 
     def tracks_of(self, track_type: TrackType) -> list[TrackInfo]:
@@ -234,14 +265,124 @@ def format_positions(positions: list[int]) -> str:
     return ", ".join(parts)
 
 
+class NameOp(str, Enum):
+    MATCHES = "matches"
+    NOT_MATCHES = "not_matches"
+    EMPTY = "empty"
+    NOT_EMPTY = "not_empty"
+
+
+class TextOp(str, Enum):
+    """How a path or file name condition compares; always case-insensitive."""
+
+    CONTAINS = "contains"
+    NOT_CONTAINS = "not_contains"
+    MATCHES = "matches"  # regular expression
+    NOT_MATCHES = "not_matches"
+
+    @property
+    def is_regex(self) -> bool:
+        return self in (TextOp.MATCHES, TextOp.NOT_MATCHES)
+
+    @property
+    def negated(self) -> bool:
+        return self in (TextOp.NOT_CONTAINS, TextOp.NOT_MATCHES)
+
+
+class TextCondition(BaseModel):
+    op: TextOp = TextOp.CONTAINS
+    value: str = ""
+
+    @property
+    def active(self) -> bool:
+        return bool(self.value)
+
+    def regex_error(self) -> str:
+        if not self.op.is_regex or not self.value:
+            return ""
+        return userregex.compile_error(self.value)
+
+    def test(self, text: str) -> bool:
+        """May raise userregex.RegexTimeout."""
+        if not self.value:
+            return True
+        if self.op.is_regex:
+            try:
+                hit = bool(userregex.search(self.value, text))
+            except userregex.error:
+                return False
+        else:
+            hit = self.value.lower() in text.lower()
+        return hit != self.op.negated
+
+
+class NumOp(str, Enum):
+    EQ = "eq"
+    NE = "ne"
+    LT = "lt"
+    LE = "le"
+    GT = "gt"
+    GE = "ge"
+
+    @property
+    def symbol(self) -> str:
+        return {"eq": "=", "ne": "≠", "lt": "<", "le": "≤", "gt": ">", "ge": "≥"}[self.value]
+
+    def test(self, actual: float, wanted: float) -> bool:
+        same = abs(actual - wanted) < 1e-6
+        return {
+            NumOp.EQ: same,
+            NumOp.NE: not same,
+            NumOp.LT: actual < wanted and not same,
+            NumOp.LE: actual < wanted or same,
+            NumOp.GT: actual > wanted and not same,
+            NumOp.GE: actual > wanted or same,
+        }[self]
+
+
+class NumCondition(BaseModel):
+    op: NumOp = NumOp.GE
+    value: float = 0
+
+
+# technical values a rule can compare: key -> (label, unit, track types that have it)
+NUMERIC: dict[str, tuple[str, str, tuple[TrackType, ...]]] = {
+    "channels": ("Channels", "", (TrackType.AUDIO,)),
+    "bitrate": ("Bitrate", "kbps", (TrackType.AUDIO, TrackType.VIDEO)),
+    "sample_rate": ("Sample rate", "kHz", (TrackType.AUDIO,)),
+    "bit_depth": ("Bit depth", "bit", (TrackType.AUDIO,)),
+    "height": ("Height", "px", (TrackType.VIDEO,)),
+    "fps": ("Frame rate", "fps", (TrackType.VIDEO,)),
+}
+
+
+def numeric_value(track: TrackInfo, key: str) -> float | None:
+    """The value a numeric condition compares, in the unit shown in the editor; None if unknown."""
+    return {
+        "channels": track.channels,
+        "bitrate": track.bitrate_kbps,
+        "sample_rate": track.sample_rate_khz,
+        "bit_depth": track.bit_depth,
+        "height": track.height,
+        "fps": track.fps,
+    }[key]
+
+
 class TrackMatcher(BaseModel):
     track_type: TrackType
     positions: list[int] = Field(default_factory=list)  # nth track(s) of this type, 1-based; empty = any
     languages: list[str] = Field(default_factory=list)
+    languages_not: bool = False  # the track must have none of the languages
     codec_contains: str = ""
+    codec_not: bool = False
     name_regex: str = ""
+    name_op: NameOp = NameOp.MATCHES
     is_default: bool | None = None
     is_forced: bool | None = None
+    flags: dict[str, bool] = Field(default_factory=dict)  # the other flags (FLAG_CONDITIONS) -> wanted state
+    numbers: dict[str, NumCondition] = Field(default_factory=dict)  # key: see NUMERIC
+    path: TextCondition | None = None  # full path of the file
+    file_name: TextCondition | None = None  # file name with extension
     match_mode: MatchMode = MatchMode.FIRST
 
     @property
@@ -253,39 +394,75 @@ class TrackMatcher(BaseModel):
         """
         return bool(self.positions) or self.match_mode == MatchMode.ALL
 
+    @property
+    def uses_name(self) -> bool:
+        return bool(self.name_regex) or self.name_op in (NameOp.EMPTY, NameOp.NOT_EMPTY)
+
     def regex_error(self) -> str:
-        """Why `name_regex` cannot be used, or "" if it is fine."""
-        if not self.name_regex:
-            return ""
-        try:
-            re.compile(self.name_regex)
-        except re.error as e:
-            return str(e)
+        """Why a regular expression of the rule cannot be used, or "" if all are fine."""
+        if self.name_regex and self.name_op in (NameOp.MATCHES, NameOp.NOT_MATCHES):
+            error = userregex.compile_error(self.name_regex)
+            if error:
+                return f"name: {error}"
+        for label, cond in (("path", self.path), ("file name", self.file_name)):
+            error = cond.regex_error() if cond else ""
+            if error:
+                return f"{label}: {error}"
         return ""
 
+    def numeric_keys(self) -> list[str]:
+        """The numeric conditions that apply to the track type (others are ignored)."""
+        return [k for k in self.numbers if k in NUMERIC and self.track_type in NUMERIC[k][2]]
+
+    def file_matches(self, path: str) -> bool:
+        """The conditions on the file itself; if they fail, the rule matches no track in this file."""
+        if self.path and not self.path.test(path):
+            return False
+        if self.file_name and not self.file_name.test(Path(path).name):
+            return False
+        return True
+
+    def unknown_values(self, track: TrackInfo) -> list[str]:
+        """Labels of the numeric conditions whose value this track does not report."""
+        return [NUMERIC[k][0] for k in self.numeric_keys() if numeric_value(track, k) is None]
+
     def matches(self, track: TrackInfo) -> bool:
+        """May raise userregex.RegexTimeout."""
         if track.type != self.track_type:
             return False
         if self.positions and track.index_in_type not in self.positions:
             return False
-        if self.languages:
-            wanted = [lang for lang in self.languages if lang.strip()]
-            if wanted and not any(language_matches(lang, track) for lang in wanted):
-                return False
+        wanted = [lang for lang in self.languages if lang.strip()]
+        if wanted and any(language_matches(lang, track) for lang in wanted) == self.languages_not:
+            return False
         if self.codec_contains.strip():
             needle = self.codec_contains.strip().lower()
-            if needle not in track.codec.lower() and needle not in track.codec_id.lower():
+            hit = needle in track.codec.lower() or needle in track.codec_id.lower()
+            if hit == self.codec_not:
                 return False
-        if self.name_regex:
+        if self.name_op == NameOp.EMPTY and track.name:
+            return False
+        if self.name_op == NameOp.NOT_EMPTY and not track.name:
+            return False
+        if self.name_regex and self.name_op in (NameOp.MATCHES, NameOp.NOT_MATCHES):
             try:
-                if not re.search(self.name_regex, track.name, re.IGNORECASE):
-                    return False
-            except re.error:
+                hit = bool(userregex.search(self.name_regex, track.name))
+            except userregex.error:
+                return False
+            if hit == (self.name_op == NameOp.NOT_MATCHES):
                 return False
         if self.is_default is not None and track.flag("default") != self.is_default:
             return False
         if self.is_forced is not None and track.flag("forced") != self.is_forced:
             return False
+        for key, wanted in self.flags.items():
+            if key in FLAGS and track.flag(key) != wanted:
+                return False
+        for key in self.numeric_keys():
+            actual = numeric_value(track, key)
+            cond = self.numbers[key]
+            if actual is None or not cond.op.test(float(actual), cond.value):
+                return False
         return True
 
     def describe(self) -> str:
@@ -293,18 +470,46 @@ class TrackMatcher(BaseModel):
         if self.positions:
             parts.append(f"no. {format_positions(self.positions)}")
         if self.languages:
-            parts.append("language " + "/".join(self.languages))
+            parts.append(("not " if self.languages_not else "") + "language " + "/".join(self.languages))
         if self.codec_contains:
-            parts.append(f"codec ~ {self.codec_contains}")
-        if self.name_regex:
-            parts.append(f"name ~ /{self.name_regex}/")
+            parts.append(f"codec {'!~' if self.codec_not else '~'} {self.codec_contains}")
+        if self.name_op == NameOp.EMPTY:
+            parts.append("no name")
+        elif self.name_op == NameOp.NOT_EMPTY:
+            parts.append("has a name")
+        elif self.name_regex:
+            parts.append(f"name {'!~' if self.name_op == NameOp.NOT_MATCHES else '~'} /{self.name_regex}/")
+        for key in self.numeric_keys():
+            parts.append(numeric_chip(key, self.numbers[key]))
+        for label, cond in (("path", self.path), ("file", self.file_name)):
+            if cond and cond.active:
+                parts.append(text_chip(label, cond))
         if self.is_default is not None:
             parts.append("default" if self.is_default else "not default")
         if self.is_forced is not None:
             parts.append("forced" if self.is_forced else "not forced")
+        for key, wanted in self.flags.items():
+            if key in FLAGS:
+                parts.append(("" if wanted else "not ") + FLAGS[key][2].lower())
         if not self.positions:  # positions name the tracks themselves
             parts.append("all matches" if self.match_mode == MatchMode.ALL else "first match")
         return ", ".join(parts)
+
+
+def text_chip(label: str, cond: TextCondition) -> str:
+    """'path ~ Anime', 'file !~ OVA', 'file ~ /S\\d+E\\d+/' (slashes mark a regular expression)."""
+    value = f"/{cond.value}/" if cond.op.is_regex else cond.value
+    return f"{label} {'!~' if cond.op.negated else '~'} {value}"
+
+
+def numeric_chip(key: str, cond: NumCondition) -> str:
+    label, unit, _ = NUMERIC[key]
+    return f"{label.lower()} {cond.op.symbol} {format_value(cond.value)}{' ' + unit if unit else ''}"
+
+
+def format_value(value: float) -> str:
+    """48.0 -> "48", 23.976 -> "23.976"."""
+    return f"{value:.3f}".rstrip("0").rstrip(".")
 
 
 class TrackRule(BaseModel):
@@ -361,6 +566,8 @@ class GeneralSettings(BaseModel):
     title_template: str = "{file_name}"
     num_start: int = 1
     num_padding: int = 2
+    # regular expression on the file name (without extension); its groups become {1}, {2}, ...
+    name_pattern: str = ""
     chapters: ExternalSource = Field(default_factory=ExternalSource)
     tags: ExternalSource = Field(default_factory=ExternalSource)
     stats_tags: StatsTagsMode = StatsTagsMode.UNCHANGED

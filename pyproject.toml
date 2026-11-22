@@ -13,6 +13,7 @@ dependencies = [
     "PySide6-Essentials>=6.7",
     "PySide6-Fluent-Widgets>=1.7",
     "pydantic>=2.6",
+    "regex>=2024.11",
 ]
 
 [project.optional-dependencies]

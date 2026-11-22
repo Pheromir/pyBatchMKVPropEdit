@@ -7,14 +7,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .languages import language_problem
-from .matcher import resolve
+from .matcher import Resolution, resolve
 from .models import (
     FLAGS,
     AttachmentSelector,
     ExternalSource,
     FileInfo,
     GlobalPreset,
-    NameMode,
     SourceMode,
     StatsTagsMode,
     TitleMode,
@@ -22,7 +21,7 @@ from .models import (
     TriState,
     language_differs,
 )
-from .placeholders import file_context, render, track_context
+from .placeholders import file_context, pattern_groups, render, track_context
 
 SCOPE_GENERAL = "General"
 SCOPE_ATTACHMENTS = "Attachments"
@@ -46,6 +45,7 @@ class FilePlan:
     args: list[str] = field(default_factory=list)
     changes: list[Change] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    resolution: Resolution | None = None  # the evaluated track rules, e.g. for the tracks each rule matches
 
     @property
     def has_work(self) -> bool:
@@ -157,7 +157,11 @@ def plan_file(file: FileInfo, preset: GlobalPreset, index: int, only_changes: bo
 
     def warn_unknown(unknown: list[str], where: str) -> None:
         for key in unknown:
-            plan.warnings.append(f"Unknown placeholder {{{key}}} in {where}.")
+            plan.warnings.append(f"Unknown placeholder or filter {{{key}}} in {where}.")
+
+    _, pattern_problem = pattern_groups(g.name_pattern, mkv.stem)
+    if pattern_problem:
+        plan.warnings.append(pattern_problem + " {0}, {1}, ... stay empty.")
 
     # --- tags
     tags = g.tags
@@ -171,7 +175,7 @@ def plan_file(file: FileInfo, preset: GlobalPreset, index: int, only_changes: bo
         path = _external_path(tags, mkv)
         if path and Path(path).is_file():
             args += ["--tags", f"{target}:{path}"]
-            plan.changes.append(Change(SCOPE_GENERAL, "Tags", "", f"from {Path(path).name}"))
+            plan.changes.append(Change(SCOPE_GENERAL, "Tags", "", f"from {path}"))
         else:
             plan.warnings.append(f"Tag file not found: {path or '(empty)'}")
 
@@ -185,7 +189,7 @@ def plan_file(file: FileInfo, preset: GlobalPreset, index: int, only_changes: bo
         path = _external_path(chaps, mkv)
         if path and Path(path).is_file():
             args += ["--chapters", path]
-            plan.changes.append(Change(SCOPE_GENERAL, "Chapters", "", f"from {Path(path).name}"))
+            plan.changes.append(Change(SCOPE_GENERAL, "Chapters", "", f"from {path}"))
         else:
             plan.warnings.append(f"Chapter file not found: {path or '(empty)'}")
 
@@ -224,7 +228,9 @@ def plan_file(file: FileInfo, preset: GlobalPreset, index: int, only_changes: bo
             continue
         args += _attachment_meta(a.name, a.description, a.mime_type)
         args += ["--add-attachment", a.path]
-        plan.changes.append(Change(SCOPE_ATTACHMENTS, "Add", "", a.name or Path(a.path).name))
+        # the source path is always shown: the name alone could hide which file is added
+        shown = f"{a.name.strip()} ← {a.path}" if a.name.strip() else a.path
+        plan.changes.append(Change(SCOPE_ATTACHMENTS, "Add", "", shown))
     for r in att.replace:
         if not r.value.strip():
             continue
@@ -236,10 +242,11 @@ def plan_file(file: FileInfo, preset: GlobalPreset, index: int, only_changes: bo
             continue
         args += _attachment_meta(r.name, r.description, r.mime_type)
         args += ["--replace-attachment", f"{attachment_selector(r.selector, r.value, replace=True)}:{r.path}"]
-        plan.changes.append(Change(SCOPE_ATTACHMENTS, "Replace", f"{r.selector.label}: {r.value}", Path(r.path).name))
+        plan.changes.append(Change(SCOPE_ATTACHMENTS, "Replace", f"{r.selector.label}: {r.value}", r.path))
 
     # --- tracks
-    resolution = resolve(preset.rules, file)
+    resolution = resolve(preset.rules, file, fctx)
+    plan.resolution = resolution
     plan.warnings.extend(resolution.warnings)
     for entry in resolution.ordered():
         track, actions = entry.track, entry.actions
@@ -254,17 +261,17 @@ def plan_file(file: FileInfo, preset: GlobalPreset, index: int, only_changes: bo
                 continue
             props += ["--set", f"{FLAGS[key][0]}={int(new)}"]
             plan.changes.append(Change(scope, FLAGS[key][2], _bool_str(old), _bool_str(new)))
-        tctx = {**fctx, **track_context(track, actions.language)}
-        if actions.name_mode == NameMode.SET:
-            name, unknown = render(actions.name_template, tctx)
-            warn_unknown(unknown, f"track name ({scope})")
-            if name != track.name or not only_changes:
-                props += ["--set", f"name={name}"]
-                plan.changes.append(Change(scope, FIELD_NAME, track.name, name))
-        elif actions.name_mode == NameMode.CLEAR:
+        # the name was filled in while the rules were evaluated, see matcher.resolve
+        if entry.renamed and entry.name_removed:
             if track.name or not only_changes:
                 props += ["--delete", "name"]
                 plan.changes.append(Change(scope, FIELD_NAME, track.name, "(removed)"))
+        elif entry.renamed:
+            if entry.name != track.name or not only_changes:
+                props += ["--set", f"name={entry.name}"]
+                plan.changes.append(Change(scope, FIELD_NAME, track.name, entry.name))
+        # extra parameters see the state after all rules
+        tctx = {**fctx, **track_context(track, actions.language), "prev_track_name": entry.name}
         if actions.language and actions.language.strip():
             lang = actions.language.strip()
             message, malformed = language_problem(lang) or ("", False)

@@ -9,7 +9,6 @@ from PySide6.QtWidgets import QHBoxLayout, QWidget
 from qfluentwidgets import (
     BodyLabel,
     CaptionLabel,
-    InfoBar,
     LineEdit,
     PushButton,
     SwitchButton,
@@ -24,7 +23,7 @@ from ..core.languages import language_problem, pick_languages
 from ..core.mkvtoolnix import dir_has_tools, standard_dirs, tool_version
 from .about_dialog import COPYRIGHT, show_about
 from .state import AppState
-from .widgets.common import Card, EnumCombo, IntSpin, PathEdit, ScrollPage
+from .widgets.common import Card, EnumCombo, IntSpin, PathEdit, ScrollPage, toast
 
 THEMES = {"auto": Theme.AUTO, "light": Theme.LIGHT, "dark": Theme.DARK}
 
@@ -177,7 +176,8 @@ class SettingsPage(ScrollPage):
     def _apply_dir(self):
         folder = self.tool_dir.text()
         if folder and not dir_has_tools(folder):
-            InfoBar.error(
+            toast(
+                "error",
                 "Invalid folder",
                 "mkvmerge and mkvpropedit were not found in that folder.",
                 duration=3000,
@@ -185,7 +185,7 @@ class SettingsPage(ScrollPage):
             )
             return
         self.state.set_mkvtoolnix_dir(folder)
-        InfoBar.success("MKVToolNix", "Path applied.", duration=2000, parent=self.window())
+        toast("success", "MKVToolNix", "Path applied.", duration=2000, parent=self.window())
 
     def _save(self, *_):
         s = self.state.settings
@@ -207,7 +207,8 @@ class SettingsPage(ScrollPage):
                 codes.append(code)
         invalid = [c for c in codes if (language_problem(c) or ("", False))[1]]
         if invalid:
-            InfoBar.error(
+            toast(
+                "error",
                 "Not a language code",
                 ", ".join(invalid) + " — use codes such as ger, de or de-DE.",
                 duration=4000,

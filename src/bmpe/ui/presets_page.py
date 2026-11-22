@@ -9,9 +9,7 @@ from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QFileDialog, QHBoxLayout, QListWidgetItem, QVBoxLayout, QWidget
 from qfluentwidgets import (
     CaptionLabel,
-    InfoBar,
     ListWidget,
-    MessageBox,
     PrimaryPushButton,
     PushButton,
     StrongBodyLabel,
@@ -19,9 +17,9 @@ from qfluentwidgets import (
 from qfluentwidgets import FluentIcon as FIF
 
 from ..core.models import GlobalPreset, TrackPreset
-from ..core.presets import safe_filename
+from ..core.presets import external_references, safe_filename
 from .state import AppState
-from .widgets.common import TextInputDialog, page_layout
+from .widgets.common import message_box, page_layout, TextInputDialog, toast
 
 
 class PresetsPage(QWidget):
@@ -127,14 +125,14 @@ class PresetsPage(QWidget):
         return item.data(256) if item else None
 
     def _toast(self, title, text="", error=False):
-        (InfoBar.error if error else InfoBar.success)(title, text, duration=2500, parent=self.window())
+        toast("error" if error else "success", title, text, duration=2500, parent=self.window())
 
     def _exists(self, name: str, is_global: bool) -> bool:
         s = self.state.store
         return s.has_global(name) if is_global else s.has_track(name)
 
     def _confirm(self, title: str, text: str) -> bool:
-        box = MessageBox(title, text, self.window())
+        box = message_box(title, text, self.window())
         box.yesButton.setText("Yes")
         box.cancelButton.setText("Cancel")
         return bool(box.exec())
@@ -227,6 +225,13 @@ class PresetsPage(QWidget):
                 continue
             if not model.name:
                 model.name = Path(f).stem
+            refs = external_references(model)
+            if refs and not self._confirm(
+                "Check before importing",
+                f"\"{model.name}\" reads these files or passes these parameters to mkvpropedit. "
+                "Only import it if you trust where it comes from:\n\n" + "\n".join(f"• {r}" for r in refs),
+            ):
+                continue
             is_global = isinstance(model, GlobalPreset)
             if self._exists(model.name, is_global) and not self._confirm(
                 "Overwrite?", f"\"{model.name}\" already exists. Overwrite it?"

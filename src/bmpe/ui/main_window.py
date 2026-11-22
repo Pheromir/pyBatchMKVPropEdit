@@ -9,8 +9,6 @@ from qfluentwidgets import (
     BodyLabel,
     ComboBox,
     FluentWindow,
-    InfoBar,
-    MessageBox,
     NavigationItemPosition,
     ToolButton,
     ToolTipFilter,
@@ -26,7 +24,7 @@ from .run_page import RunPage
 from .settings_page import SettingsPage
 from .state import AppState
 from .tracks_page import TracksPage
-from .widgets.common import TextInputDialog
+from .widgets.common import message_box, TextInputDialog, toast
 
 NO_PRESET = "(no preset)"
 
@@ -82,7 +80,7 @@ class PresetBar(QWidget):
     def _confirm_discard(self) -> bool:
         if not self.state.modified:
             return True
-        box = MessageBox(
+        box = message_box(
             "Unsaved changes",
             "The current settings were changed since they were last saved. Discard them?",
             self.win,
@@ -104,7 +102,7 @@ class PresetBar(QWidget):
         try:
             self.state.load_preset(self.state.store.load_global(name), name)
         except Exception as e:  # noqa: BLE001
-            InfoBar.error("Could not load preset", str(e), parent=self.win)
+            toast("error", "Could not load preset", str(e), parent=self.win)
             self.refresh()
 
     def _new(self):
@@ -116,7 +114,7 @@ class PresetBar(QWidget):
             self._save_as()
             return
         self.state.save_preset_as(self.state.preset_name)
-        InfoBar.success("Saved", self.state.preset_name, duration=2000, parent=self.win)
+        toast("success", "Saved", self.state.preset_name, duration=2000, parent=self.win)
 
     def _save_as(self):
         name = TextInputDialog.ask(
@@ -124,7 +122,7 @@ class PresetBar(QWidget):
         )
         if name:
             self.state.save_preset_as(name)
-            InfoBar.success("Saved", name, duration=2000, parent=self.win)
+            toast("success", "Saved", name, duration=2000, parent=self.win)
 
 
 class MainWindow(FluentWindow):
@@ -165,7 +163,7 @@ class MainWindow(FluentWindow):
     def ensure_tools(self):
         """Asks for the MKVToolNix folder if neither PATH nor the default folder provides it."""
         while not self.state.tools_ok:
-            box = MessageBox(
+            box = message_box(
                 "MKVToolNix not found",
                 "mkvmerge and mkvpropedit were found neither in PATH nor in the default installation folder."
                 "\n\nPlease choose the MKVToolNix folder (it will be saved in the settings).",
@@ -174,7 +172,8 @@ class MainWindow(FluentWindow):
             box.yesButton.setText("Choose folder...")
             box.cancelButton.setText("Later")
             if not box.exec():
-                InfoBar.warning(
+                toast(
+                    "warning",
                     "No MKVToolNix",
                     "Files can only be read once the path is set in the settings.",
                     duration=5000,
@@ -189,7 +188,8 @@ class MainWindow(FluentWindow):
                 self.state.set_mkvtoolnix_dir(folder)
                 self.state.reprobe([f.path for f in self.state.files if f.error])
             else:
-                InfoBar.error(
+                toast(
+                    "error",
                     "Invalid folder",
                     "That folder does not contain mkvmerge/mkvpropedit.",
                     duration=3000,
@@ -206,7 +206,7 @@ class MainWindow(FluentWindow):
             e.ignore()
             if self._closing:
                 return
-            box = MessageBox(
+            box = message_box(
                 "Run in progress",
                 "mkvpropedit is still working. The file that is being written right now will be finished, "
                 "all remaining files are skipped, and then the window closes.",
@@ -219,7 +219,7 @@ class MainWindow(FluentWindow):
             if self.run_page.running:
                 self._closing = True
                 self.run_page.cancel_run()
-                InfoBar.info("Closing", "Waiting for the file in progress...", duration=-1, parent=self)
+                toast("info", "Closing", "Waiting for the file in progress...", duration=-1, parent=self)
             else:  # the run ended while the question was open
                 QTimer.singleShot(0, self.close)
             return

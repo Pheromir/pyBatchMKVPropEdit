@@ -27,6 +27,7 @@ def parse_identification(path: str, data: dict) -> FileInfo:
         return info
     props = container.get("properties") or {}
     info.title = props.get("title", "") or ""
+    info.duration = _int(props.get("duration"))
 
     counters: dict[TrackType, int] = {}
     for t in data.get("tracks") or []:
@@ -52,6 +53,11 @@ def parse_identification(path: str, data: dict) -> FileInfo:
                 flags=flags,
                 channels=p.get("audio_channels"),
                 dimensions=p.get("display_dimensions") or p.get("pixel_dimensions") or "",
+                pixel_dimensions=p.get("pixel_dimensions") or "",
+                bitrate=_int(p.get("tag_bps")),
+                sample_rate=_int(p.get("audio_sampling_frequency")),
+                bit_depth=_int(p.get("audio_bits_per_sample")),
+                frame_duration=_int(p.get("default_duration")),
             )
         )
     for a in data.get("attachments") or []:
@@ -73,6 +79,15 @@ def parse_identification(path: str, data: dict) -> FileInfo:
     )
     info.track_tags = max(_entries(data.get("track_tags")), as_properties)
     return info
+
+
+def _int(value) -> int | None:
+    """Numbers come as int or, in the statistics tags, as text; missing or 0 means unknown."""
+    try:
+        n = int(float(value))
+    except (TypeError, ValueError):
+        return None
+    return n or None
 
 
 def _entries(items: list | None) -> int:

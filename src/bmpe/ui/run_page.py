@@ -2,17 +2,16 @@
 
 from __future__ import annotations
 
+import sys
 import threading
 from pathlib import Path
 
-from PySide6.QtCore import QObject, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QGuiApplication
+from PySide6.QtCore import QObject, Qt, QTimer, QUrl, Signal
+from PySide6.QtGui import QColor, QDesktopServices, QGuiApplication
 from PySide6.QtWidgets import QAbstractItemView, QHBoxLayout, QHeaderView, QTreeWidgetItem, QWidget
 from qfluentwidgets import (
     Action,
     BodyLabel,
-    InfoBar,
-    MessageBox,
     PlainTextEdit,
     PrimaryPushButton,
     ProgressBar,
@@ -26,7 +25,7 @@ from qfluentwidgets import FluentIcon as FIF
 from ..core.command import FilePlan, plan_batch
 from ..core.runner import BatchRunner, RunResult, RunStatus
 from .state import AppState
-from .widgets.common import Splitter, page_layout
+from .widgets.common import message_box, page_layout, Splitter, toast
 
 WARN = QColor("#c27c0e")
 ERR = QColor("#d13438")
@@ -243,7 +242,7 @@ class RunPage(QWidget):
         text = f"{len(todo)} file(s) will be modified in place (no remux, but no undo either)."
         if n_warn:
             text += f"\n\n{n_warn} file(s) have warnings, please check the preview."
-        box = MessageBox("Write changes?", text, self.window())
+        box = message_box("Write changes?", text, self.window())
         box.yesButton.setText("Run")
         box.cancelButton.setText("Cancel")
         if not box.exec():
@@ -285,7 +284,7 @@ class RunPage(QWidget):
                 continue
             self._asking = True
             try:
-                box = MessageBox(
+                box = message_box(
                     "mkvpropedit is taking long",
                     f"\"{Path(path).name}\" has been in progress for {int(seconds // 60)} minute(s).\n\n"
                     "Large files can take a while, for example when statistics tags are calculated. "
@@ -347,7 +346,8 @@ class RunPage(QWidget):
             counts[r.status] = counts.get(r.status, 0) + 1
         msg = ", ".join(f"{n}× {s.label}" for s, n in counts.items())
         failed = sum(counts.get(s, 0) for s in (RunStatus.ERROR, RunStatus.CANCELLED, RunStatus.STOPPED))
-        (InfoBar.warning if failed else InfoBar.success)(
+        toast(
+            "warning" if failed else "success",
             "Finished", msg, duration=5000 if failed else 3000, parent=self.window()
         )
         self.log.appendPlainText(f"Finished: {msg}")
@@ -360,6 +360,10 @@ class RunPage(QWidget):
 
 
 def _open_folder(path: str):
-    import subprocess
+    """Shows the file in Explorer (Windows) or opens its folder in the file manager (other systems)."""
+    if sys.platform == "win32":
+        import subprocess
 
-    subprocess.Popen(["explorer", "/select,", path])
+        subprocess.Popen(["explorer", "/select,", path])  # noqa: S603, S607
+    else:
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(Path(path).parent)))

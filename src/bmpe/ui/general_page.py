@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from PySide6.QtWidgets import QHBoxLayout, QWidget
-from qfluentwidgets import BodyLabel, LineEdit
+from qfluentwidgets import BodyLabel, CaptionLabel, LineEdit
 
 from ..core.models import ExternalSource, SourceMode, StatsTagsMode, TitleMode
+from ..core.placeholders import pattern_groups
 from .state import AppState
 from .track_editor import placeholder_button
-from .widgets.common import Card, EnumCombo, IntSpin, PathEdit, ScrollPage
+from .widgets.common import Card, EnumCombo, IntSpin, PathEdit, ScrollPage, plain_text
 
 SOURCE_ITEMS = [
     (SourceMode.UNCHANGED, "unchanged"),
@@ -89,7 +92,7 @@ class GeneralPage(ScrollPage):
         v = self.view
 
         # ---------------- title
-        card = Card("Title (segment title)", "Placeholders: {file_name}, {dir_name}, {num}, {title}", v)
+        card = Card("Title (segment title)", "Placeholders such as {file_name}, {num} or {1}; + lists all of them.", v)
         self.title_mode = EnumCombo(
             [(TitleMode.UNCHANGED, "unchanged"), (TitleMode.SET, "set"), (TitleMode.CLEAR, "remove")], card
         )
@@ -118,6 +121,22 @@ class GeneralPage(ScrollPage):
         card.addRow("Digits (padding)", self.num_pad, stretch=False)
         self.num_example = BodyLabel("", card)
         card.addRow("Example", self.num_example)
+        self.body.addWidget(card)
+
+        # ---------------- file name pattern
+        card = Card(
+            "File name pattern {1}, {2}, …",
+            "Regular expression on the file name without extension. The parts in parentheses become {1}, {2}, …, "
+            "the whole match {0}. Case is ignored.",
+            v,
+        )
+        self.pattern = LineEdit(card)
+        self.pattern.setPlaceholderText(r"e.g. (S\d+E\d+)  or  (.+) - (\d+)")
+        card.addRow("Pattern", self.pattern)
+        self.pattern_example = CaptionLabel("", card)
+        self.pattern_example.setWordWrap(True)
+        plain_text(self.pattern_example)  # shows a file name
+        card.addRow("Example", self.pattern_example)
         self.body.addWidget(card)
 
         # ---------------- chapters / tags
@@ -158,6 +177,8 @@ class GeneralPage(ScrollPage):
         self.title.textChanged.connect(self._sync)
         self.num_start.valueChanged.connect(self._sync)
         self.num_pad.valueChanged.connect(self._sync)
+        self.pattern.textChanged.connect(self._sync)
+        state.files_changed.connect(self._update_ui)
         self.stats.currentIndexChanged.connect(self._sync)
         self.extra.textChanged.connect(self._sync)
         state.preset_replaced.connect(self.load)
@@ -170,6 +191,7 @@ class GeneralPage(ScrollPage):
         self.title.setText(g.title_template)
         self.num_start.setValue(g.num_start)
         self.num_pad.setValue(g.num_padding)
+        self.pattern.setText(g.name_pattern)
         self.chapters.load(g.chapters)
         self.tags.load(g.tags)
         self.stats.setValue(g.stats_tags)
@@ -181,6 +203,25 @@ class GeneralPage(ScrollPage):
         self.row_title.setVisible(self.title_mode.value() == TitleMode.SET)
         s, p = self.num_start.value(), self.num_pad.value()
         self.num_example.setText(", ".join(str(s + i).zfill(p) for i in range(3)) + ", …")
+        self._pattern_example()
+
+    def _pattern_example(self):
+        """What the pattern finds in the first file of the list."""
+        pattern = self.pattern.text()
+        files = self.state.files
+        if not pattern.strip():
+            self.pattern_example.setText("No pattern: {1}, {2}, … are unknown placeholders.")
+            return
+        if not files:
+            self.pattern_example.setText("Add files to see what the pattern finds.")
+            return
+        name = Path(files[0].path).stem
+        groups, problem = pattern_groups(pattern, name)
+        if problem:
+            self.pattern_example.setText(problem)
+            return
+        parts = [f"{{{k}}} = {v or '(empty)'}" for k, v in groups.items() if k != "0"] or [f"{{0}} = {groups['0']}"]
+        self.pattern_example.setText(f"{name}:  " + "   ".join(parts))
 
     def _sync(self, *_):
         self._update_ui()
@@ -191,6 +232,7 @@ class GeneralPage(ScrollPage):
         g.title_template = self.title.text()
         g.num_start = self.num_start.value()
         g.num_padding = self.num_pad.value()
+        g.name_pattern = self.pattern.text()
         self.chapters.save(g.chapters)
         self.tags.save(g.tags)
         g.stats_tags = self.stats.value()

@@ -114,6 +114,16 @@
     ]
   },
   {
+    "name": "regex",
+    "dist": "regex",
+    "version": "2026.11.9",
+    "license": "Apache-2.0 AND CNRI-Python",
+    "url": "https://github.com/mrabarnett/mrab-regex",
+    "files": [
+      "regex.txt"
+    ]
+  },
+  {
     "name": "packaging",
     "dist": "packaging",
     "version": "26.3",

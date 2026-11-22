@@ -22,7 +22,9 @@ from qfluentwidgets import (
     CheckBox,
     ComboBox,
     EditableComboBox,
+    InfoBar,
     LineEdit,
+    MessageBox,
     MessageBoxBase,
     SegmentedWidget,
     SimpleCardWidget,
@@ -402,6 +404,27 @@ def page_layout(w: QWidget, title: str | None = None) -> QVBoxLayout:
     if title:
         lay.addWidget(SubtitleLabel(title, w))
     return lay
+
+
+def plain_text(*labels: QLabel) -> None:
+    """Shows the text as it is. Qt would otherwise render text that looks like HTML, and names of files and
+    tracks come from outside the program."""
+    for label in labels:
+        label.setTextFormat(Qt.PlainText)
+
+
+def toast(kind: str, title: str, content: str = "", **kw) -> InfoBar:
+    """InfoBar.success / .error / .warning / .info with title and text shown as plain text."""
+    bar = getattr(InfoBar, kind)(title, content, **kw)
+    plain_text(bar.titleLabel, bar.contentLabel)
+    return bar
+
+
+def message_box(title: str, content: str, parent) -> MessageBox:
+    """MessageBox with title and text shown as plain text."""
+    box = MessageBox(title, content, parent)
+    plain_text(box.titleLabel, box.contentLabel)
+    return box
 
 
 class TextInputDialog(MessageBoxBase):

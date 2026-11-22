@@ -22,7 +22,6 @@ from qfluentwidgets import (
     CaptionLabel,
     ComboBox,
     DropDownPushButton,
-    InfoBar,
     PushButton,
     RoundMenu,
     SmoothScrollArea,
@@ -36,21 +35,24 @@ from qfluentwidgets import (
 from qfluentwidgets import FluentIcon as FIF
 
 from ..core.command import FIELD_EXTRA, FIELD_LANGUAGE, FIELD_NAME, YES, plan_file
-from ..core.matcher import matching_tracks
+from ..core.matcher import resolve
+from ..core.placeholders import file_context
 from ..core.models import (
     FLAGS,
     GeneralSettings,
     GlobalPreset,
+    NameMode,
     TrackInfo,
     TrackMatcher,
     TrackPreset,
     TrackRule,
     TrackType,
+    TriState,
 )
 from .rule_list import RuleList
 from .state import AppState
 from .track_editor import TrackRuleEditor
-from .widgets.common import Splitter, TextInputDialog, page_layout
+from .widgets.common import page_layout, Splitter, TextInputDialog, toast
 
 REF_COLUMNS = ["Type", "No.", "Language", "Codec", "Name", "Flags"]
 COL_LANG, COL_NAME, COL_FLAGS = 2, 4, 5
@@ -277,7 +279,7 @@ class TracksPage(QWidget):
         return next((f for f in self.state.files if f.path == path and not f.error), None)
 
     def _toast(self, title: str, text: str = "", error: bool = False):
-        (InfoBar.error if error else InfoBar.success)(title, text, duration=2500, parent=self.window())
+        toast("error" if error else "success", title, text, duration=2500, parent=self.window())
 
     # ------------------------------------------------------------------ reference file
     def _refresh_ref_files(self):
@@ -306,7 +308,8 @@ class TracksPage(QWidget):
             for ch in plan.changes:
                 changes.setdefault(ch.scope, {})[ch.field] = (ch.old, ch.new)
         current = self._current_rule()
-        hits = {t.id for t in matching_tracks(current, f)} if (f and current) else set()
+        resolved = plan.resolution.hits if f and plan.resolution else {}
+        hits = {t.id for t in resolved.get(current.id, [])} if current else set()
         highlight = QBrush(QColor(0, 120, 212, 70 if isDarkTheme() else 40))
         accent = QColor("#60cdff") if isDarkTheme() else QColor("#005fb8")
         self.ref_table.setRowCount(len(tracks))
@@ -360,17 +363,21 @@ class TracksPage(QWidget):
             self.editor.set_result("")
             return
         files = [f for f in self.state.ready_files() if not f.error]
-        n = sum(1 for f in files if matching_tracks(rule, f))
+        n = sum(1 for f in files if self._rule_hits(f).get(rule.id))
         text = f"Matches in {n} of {len(files)} file(s)."
         ref = self._ref_file()
         if ref:
-            hits = matching_tracks(rule, ref)
+            hits = self._rule_hits(ref).get(rule.id, [])
             text += " Reference: " + ("; ".join(t.describe() for t in hits) if hits else "no track")
         self.editor.set_match_info(text)
         self.editor.set_result(self._rule_result(rule, ref))
 
     def _rule_result(self, rule: TrackRule, ref) -> str:
-        """What the selected rule on its own changes in the reference file."""
+        """What the selected rule changes in the reference file.
+
+        The rules above it are evaluated too, because their language and names feed {lang_name} and
+        {prev_track_name}; only the fields this rule sets, on the tracks it affects, are listed.
+        """
         if not ref or rule.actions.is_empty():
             return ""
         head = "In the reference file: "
@@ -378,13 +385,30 @@ class TracksPage(QWidget):
             return head + "nothing, the rule is switched off."
         ready = self.state.ready_files()
         index = next((i for i, x in enumerate(ready) if x.path == ref.path), 0)
-        general = self.state.preset.general
-        alone = GlobalPreset(
-            general=GeneralSettings(num_start=general.num_start, num_padding=general.num_padding), rules=[rule]
-        )
-        plan = plan_file(ref, alone, index, self.state.settings.only_changes)
+        g = self.state.preset.general
+        general = GeneralSettings(num_start=g.num_start, num_padding=g.num_padding, name_pattern=g.name_pattern)
+        only = self.state.settings.only_changes
+        above = self.rules[: next((i for i, r in enumerate(self.rules) if r.id == rule.id), len(self.rules))]
+        plan = plan_file(ref, GlobalPreset(general=general, rules=[*above, rule]), index, only)
+        alone = plan_file(ref, GlobalPreset(general=general, rules=[rule]), index, only)  # its own warnings
+        a = rule.actions
+        fields = {FLAGS[k][2] for k, s in a.flags.items() if s != TriState.UNCHANGED}
+        if a.exclusive_default:
+            fields.add(FLAGS["default"][2])
+        if a.name_mode != NameMode.UNCHANGED:
+            fields.add(FIELD_NAME)
+        if a.language:
+            fields.add(FIELD_LANGUAGE)
+        if a.extra_args.strip():
+            fields.add(FIELD_EXTRA)
+        hits = plan.resolution.hits.get(rule.id, []) if plan.resolution else []
+        scopes = {t.describe() for t in hits}
+        if a.exclusive_default:  # takes the default flag from the other tracks of the type
+            scopes |= {t.describe() for t in ref.tracks_of(rule.matcher.track_type)}
         by_track: dict[str, list[str]] = {}
         for ch in plan.changes:
+            if ch.scope not in scopes or ch.field not in fields:
+                continue
             if ch.field == FIELD_EXTRA:
                 part = f"extra parameters {ch.new}"
             elif ch.field == FIELD_NAME:
@@ -392,11 +416,11 @@ class TracksPage(QWidget):
             else:
                 part = f"{ch.field.lower()} {ch.old} → {ch.new}"
             by_track.setdefault(ch.scope, []).append(part)
-        warnings = [f"⚠ {w}" for w in plan.warnings if "matches no track" not in w]
+        warnings = [f"⚠ {w}" for w in alone.warnings if "matches no track" not in w]
         if by_track:
             lines = [f"{scope}:  {', '.join(parts)}" for scope, parts in by_track.items()]
             return "\n".join([head.rstrip(), *lines, *warnings])
-        if not matching_tracks(rule, ref):
+        if not hits:
             return "\n".join([head + "no track matches.", *warnings])
         return "\n".join([head + "already as wanted, nothing to change.", *warnings])
 
@@ -406,7 +430,14 @@ class TracksPage(QWidget):
         files = [f for f in self.state.ready_files() if not f.error]
         if not files:
             return {}
-        return {r.id: (sum(1 for f in files if matching_tracks(r, f)), len(files)) for r in self.rules}
+        per_file = [self._rule_hits(f) for f in files]
+        return {r.id: (sum(1 for hits in per_file if hits.get(r.id)), len(files)) for r in self.rules}
+
+    def _rule_hits(self, f) -> dict:
+        """Rule id -> tracks the rule matches in `f`, evaluated in list order like the run itself."""
+        ready = self.state.ready_files()
+        index = next((i for i, x in enumerate(ready) if x.path == f.path), 0)
+        return resolve(self.rules, f, file_context(f, index, self.state.preset.general)).hits
 
     def _show_rules(self):
         self.rule_list.set_rules(self.rules, self._hits())

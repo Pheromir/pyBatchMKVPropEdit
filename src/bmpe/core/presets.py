@@ -10,7 +10,7 @@ from typing import TypeVar
 
 from pydantic import BaseModel
 
-from .models import AppSettings, GlobalPreset, TrackPreset
+from .models import AppSettings, GlobalPreset, SourceMode, TrackActions, TrackPreset
 
 APP_NAME = "pyBatchMKVPropEdit"
 # device names Windows does not allow as a file name, with or without an extension
@@ -33,6 +33,34 @@ def safe_filename(name: str) -> str:
     if cleaned.split(".")[0].strip().upper() in _RESERVED:
         cleaned = "_" + cleaned
     return cleaned
+
+
+def external_references(preset: GlobalPreset | TrackPreset) -> list[str]:
+    """Local files a preset reads and free parameters it passes to mkvpropedit.
+
+    A preset from someone else could use them to copy a private file into the MKVs (as an attachment, for
+    example), so they are shown before such a preset is imported.
+    """
+    out: list[str] = []
+    actions: list[tuple[str, TrackActions]] = []
+    if isinstance(preset, GlobalPreset):
+        g = preset.general
+        for kind, src in (("Chapters", g.chapters), ("Tags", g.tags)):
+            if src.mode == SourceMode.FILE and src.file_path.strip():
+                out.append(f"{kind} from {src.file_path}")
+        for a in preset.attachments.add:
+            out.append(f"Add attachment {a.path}" + (f' named "{a.name}"' if a.name.strip() else ""))
+        for r in preset.attachments.replace:
+            out.append(f"Replace attachment {r.value} with {r.path}")
+        if g.extra_args.strip():
+            out.append(f"Extra parameters: {g.extra_args.strip()}")
+        actions = [(f"rule '{rule.display_label}'", rule.actions) for rule in preset.rules]
+    else:
+        actions = [("the track preset", preset.actions)]
+    for where, a in actions:
+        if a.extra_args.strip():
+            out.append(f"Extra parameters of {where}: {a.extra_args.strip()}")
+    return out
 
 
 class PresetStore:

@@ -1,0 +1,9 @@
+# The actions in the workflows are pinned by commit; Dependabot proposes new commits once a month.
+# Python packages are pinned in requirements-build.txt by tools/lock_build_requirements.py from a tested
+# environment, so they are not updated here.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly

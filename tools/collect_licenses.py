@@ -73,6 +73,7 @@ def main() -> None:
         "packaging.txt": dist_file("packaging", "licenses/LICENSE"),
         "packaging-Apache-2.0.txt": dist_file("packaging", "licenses/LICENSE.APACHE"),
         "packaging-BSD.txt": dist_file("packaging", "licenses/LICENSE.BSD"),
+        "regex.txt": dist_file("regex", "licenses/LICENSE.txt"),
         "DejaVu.txt": (ROOT / "tools" / "fonts" / "LICENSE-DejaVu.txt").read_text(encoding="utf-8"),
     }
     if windows:
@@ -174,6 +175,14 @@ def main() -> None:
             "license": "PSF-2.0",
             "url": "https://github.com/python/typing_extensions",
             "files": ["typing-extensions.txt"],
+        },
+        {
+            "name": "regex",
+            "dist": "regex",
+            "version": v("regex"),
+            "license": "Apache-2.0 AND CNRI-Python",
+            "url": "https://github.com/mrabarnett/mrab-regex",
+            "files": ["regex.txt"],
         },
         {
             "name": "packaging",
